@@ -1,0 +1,6 @@
+@IDM.GatewayAPI_HostAddress = http://localhost:5047
+
+GET {{IDM.GatewayAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

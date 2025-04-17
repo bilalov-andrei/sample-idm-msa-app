@@ -1,0 +1,123 @@
+services:
+  gateway-api:
+    container_name: gateway-api
+    build:
+      context: .
+      dockerfile: src/IDM.GatewayAPI/Dockerfile
+    depends_on:
+      - employee-service-api
+      - access-management-api
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+    ports:
+      - 5010:5010
+      
+  employee-service-api:
+    build:
+      context: ..
+      dockerfile: src/IDM.EmployeeService.API/Dockerfile
+    hostname: employee-service
+    container_name: employee-service-api
+    environment:
+      DatabaseConnectionOptions__ConnectionString: "Host=employee-service-db;Port=5432;Database=employee-service;Username=employee_service_admin;Password=employee_service_password"
+      DatabaseConnectionOptions__MasterConnectionString: "Host=employee-service-db;Port=5432;Database=postgres;Username=employee_service_admin;Password=employee_service_password"
+      OutboxConfigurationOptions__NoMessagesDelay: 1000
+      OutboxConfigurationOptions__BatchSize: 10
+      KafkaConfigurationOptions__BootstrapServers: "kafka:29092"
+      KafkaConfigurationOptions__Topic: "employee_notification_event"
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - 8080:8080
+    depends_on:
+      - employee-service-db
+      - kafka
+    networks:
+    - idm-network
+
+  employee-service-db:
+    image: postgres:latest
+    restart: unless-stopped
+    container_name: employee-service-db
+    environment:
+      POSTGRES_USER: employee_service_admin
+      POSTGRES_PASSWORD: employee_service_password
+      POSTGRES_DB: employee-service
+    ports:
+      - "5424:5432"
+    volumes:
+      - employee_postgres_data:/var/lib/postgresql/data
+    networks:
+    - idm-network
+
+  access-management-api:
+    build:
+      context: ..
+      dockerfile: src/IDM.AccessManagement.API/Dockerfile
+    hostname: access-management-api
+    container_name: access-management-api
+    environment:
+      DatabaseConnectionOptions__ConnectionString: "Host=access-management-db;Port=5432;Database=access-management;Username=access_management_admin;Password=access_management_password"
+      DatabaseConnectionOptions__MasterConnectionString: "Host=access-management-db;Port=5432;Database=postgres;Username=access_management_admin;Password=access_management_password"
+      KafkaConfigurationOptions__BootstrapServers: "kafka:29092"
+      KafkaConfigurationOptions__EmployeeNotificationEventTopic: "employee_notification_event"
+      ASPNETCORE_ENVIRONMENT: Development
+    ports:
+      - 8070:8070
+    depends_on:
+      - access-management-db
+      - kafka
+    networks:
+    - idm-network
+
+  access-management-db:
+    image: postgres:latest
+    restart: unless-stopped
+    container_name: access-management-db
+    environment:
+      POSTGRES_USER: access_management_admin
+      POSTGRES_PASSWORD: access_management_password
+      POSTGRES_DB: access-management
+    ports:
+      - "5425:5432"
+    volumes:
+      - access_postgres_data:/var/lib/postgresql/data
+    networks:
+    - idm-network
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.4
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 2181:2181
+    networks:
+    - idm-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.4
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    networks:
+    - idm-network
+
+networks:
+  idm-network:
+    driver: bridge
+
+volumes:
+  employee_postgres_data:
+  access_postgres_data:
+  
